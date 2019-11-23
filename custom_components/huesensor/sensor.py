@@ -9,12 +9,18 @@ import async_timeout
 import logging
 import threading
 from datetime import timedelta
+import voluptuous as vol
+
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.helpers import config_validation as cv
+
 
 DEPENDENCIES = ["hue"]
+DOMAIN = "huesensor"
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +55,33 @@ ATTRS = {
     "FOH": ["last_updated"],
 }
 
+SERVICE_HUE_CONFIG = "hue_config_sensor"
+ATTR_ON = "on"
+ATTR_SENSITIVITY = "sensitivity"
+ATTR_THOLDOFFSET = "tholdoffset"
+ATTR_THOLDDARK = "tholddark"
+ATTR_SUNRISEOFFSET = "sunriseoffset"
+ATTR_SUNSETOFFSET = "sunsetoffset"
+ATTR_LONG = "long"
+ATTR_LAT = "lat"
+
+MOTION_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids,
+        vol.Optional(ATTR_ON): cv.boolean,
+        vol.Optional(ATTR_SENSITIVITY): cv.positive_int,
+        vol.Optional(ATTR_THOLDOFFSET): cv.positive_int,
+        vol.Optional(ATTR_THOLDDARK): cv.positive_int,
+        vol.Optional(ATTR_SUNRISEOFFSET): vol.All(
+            vol.Coerce(int), vol.Range(min=-120, max=120)
+        ),
+        vol.Optional(ATTR_SUNSETOFFSET): vol.All(
+            vol.Coerce(int), vol.Range(min=-120, max=120)
+        ),
+        vol.Optional(ATTR_LONG): cv.longitude,
+        vol.Optional(ATTR_LAT): cv.latitude,
+    }
+)
 
 def parse_hue_api_response(sensors):
     """Take in the Hue API json response."""
@@ -175,6 +208,22 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     data = HueSensorData(hass, async_add_entities)
     await data.async_update_info()
     async_track_time_interval(hass, data.async_update_info, SCAN_INTERVAL)
+
+    async def hue_config_sensor(service):
+        """Service to call directly into bridge to set config."""
+
+        entity_ids = service.data.get(ATTR_ENTITY_ID)
+        data_dict = {k: v for k, v in service.data.items() if ATTR_ENTITY_ID not in k}
+
+        current_sensors = hass.data["hue"]["current_sensors"]
+        for entry in current_sensors.values():
+            if entry.entity_id in entity_ids:
+                await entry.sensor.set_config(**data_dict)
+        return True
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_HUE_CONFIG, hue_config_sensor, schema=MOTION_SCHEMA
+    )
 
 
 class HueSensorData(object):
