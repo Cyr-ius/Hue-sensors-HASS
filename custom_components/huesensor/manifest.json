@@ -1,8 +1,9 @@
 {
     "domain": "huesensor",
     "name": "Hue sensor custom component",
+    "config_flow": true,
     "documentation": "https://github.com/robmarkcole/Hue-sensors-HASS",
     "requirements": [],
-    "dependencies": ["hue"],
+    "dependencies": ["hue","sensor", "binary_sensor"],
     "codeowners": ["@robmarkcole"]
 }
