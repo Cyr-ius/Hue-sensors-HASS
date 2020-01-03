@@ -11,7 +11,6 @@ import logging
 from homeassistant.components import zone
 from homeassistant.components.device_tracker.const import CONF_SCAN_INTERVAL
 from homeassistant.components.device_tracker.legacy import DeviceScanner
-from homeassistant.components.huesensor import HueSensorData
 from homeassistant.const import (
     ATTR_GPS_ACCURACY,
     ATTR_LATITUDE,
@@ -22,6 +21,8 @@ from homeassistant.const import (
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import slugify
 import homeassistant.util.dt as dt_util
+
+from . import HueSensorData
 
 DEPENDENCIES = ["hue"]
 
