@@ -1,0 +1,10 @@
+{
+  "config": {
+    "title": "Hue Sensors Advanced",
+    "step": {
+      "user": {
+        "title": "Hue Sensors Advanced"
+      }
+    }
+  }
+}
