@@ -5,6 +5,7 @@ For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/sensor.hue/
 """
 import logging
+import re
 
 from homeassistant.components.binary_sensor import BinarySensorDevice
 from homeassistant.components.hue import DOMAIN
@@ -58,13 +59,11 @@ class HueBinarySensor(BinarySensorDevice):
     @property
     def unique_id(self):
         """Return the ID of this Hue sensor."""
-        uid = "SML_" + self.my_data["uniqueid"]
-        return uid
+        return "{}_{}".format(self.my_data["model"],self.my_data["uniqueid"])
 
     @property
     def is_on(self):
         """Return the state of the sensor."""
-        _LOGGER.debug(f"Update State: {self.name} {self.unique_id}")
         if self.my_data and self.my_data["model"] == "SML" and self.my_data["changed"]:
             return self.my_data["state"] == STATE_ON
         return False
@@ -94,9 +93,13 @@ class HueBinarySensor(BinarySensorDevice):
     @property
     def device_info(self):
         """Return the device info."""
+        pattern = re.compile(r'(?:[0-9a-fA-F]:?){16}')
+        macs  = re.findall(pattern,self.unique_id)
+        if len(macs) == 1:
+            identifier = macs[0]
         return {
             "name": self.name,
-            "identifiers": {(DOMAIN, self.unique_id[4:-8])},
+            "identifiers": {(DOMAIN, identifier)},
             "manufacturer": self.my_data["manufacturername"],
             "model": self.my_data["productname"],
         }

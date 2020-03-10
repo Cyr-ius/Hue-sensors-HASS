@@ -5,11 +5,13 @@ For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/sensor.hue/
 """
 import logging
+import re
 
 from homeassistant.components.hue import DOMAIN
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, dispatcher_send
 from homeassistant.helpers.entity import Entity
+from homeassistant.const import DEVICE_CLASS_BATTERY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +46,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     devices = []
     for key, entity in hass.data["huesensor"]["data"].items():
+        if 'battery' in entity:
+            entity_data = hass.data["huesensor"]["data"]
+            devices.append(HueBattery(key, entity_data, hass))
         if entity["model"] != "SML":
             entity_data = hass.data["huesensor"]["data"]
             devices.append(HueSensor(key, entity_data, hass))
@@ -59,7 +64,6 @@ class HueSensor(Entity):
         """Initialize the sensor object."""
         self._hue_id = hue_id
         self._data = data  # data is in .data
-        # ~ self.my_data = None
         self.my_data = self._data.get(self._hue_id)
         self.hass = hass
         self._unsubs = []
@@ -77,12 +81,11 @@ class HueSensor(Entity):
     @property
     def unique_id(self):
         """Return the ID of this Hue sensor."""
-        return self.my_data["uniqueid"]
+        return "{}_{}".format(self.my_data["model"],self.my_data["uniqueid"])
 
     @property
     def state(self):
         """Return the state of the sensor."""
-        _LOGGER.debug(f"Update State: {self.name} {self.unique_id}")
         if self.my_data and self.my_data["changed"]:
             return self.my_data["state"]
 
@@ -111,9 +114,87 @@ class HueSensor(Entity):
     @property
     def device_info(self):
         """Return the device info."""
+        pattern = re.compile(r'(?:[0-9a-fA-F]:?){16}')
+        macs  = re.findall(pattern,self.unique_id)
+        if len(macs) == 1:
+            identifier = macs[0]
         return {
             "name": self.name,
-            "identifiers": {(DOMAIN, self.unique_id)},
+            "identifiers": {(DOMAIN, identifier)},
+            "manufacturer": self.my_data["manufacturername"],
+            "model": self.my_data["productname"],
+        }
+
+    async def async_added_to_hass(self):
+        """Connect dispatcher and send for register hue component."""
+        dispatcher_send(self.hass, "update-hue", self.unique_id)
+        self._unsubs = async_dispatcher_connect(
+            self.hass, "update-{}".format(self._hue_id), self.async_update_info
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Disconnect entity object when removed."""
+        self._unsubs()
+
+    @callback
+    def async_update_info(self, hue_id, data):
+        """Update entity."""
+        self.my_data = data.get(self._hue_id)
+        self.async_schedule_update_ha_state()
+
+class HueBattery(Entity):
+    """Class to hold Hue Sensor basic info."""
+
+
+    def __init__(self, hue_id, data, hass=None):
+        """Initialize the sensor object."""
+        self._hue_id = hue_id
+        self._data = data  # data is in .data
+        self.my_data = self._data.get(self._hue_id)
+        self.hass = hass
+        self._unsubs = []
+
+    @property
+    def should_poll(self):
+        """No polling needed."""
+        return False
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return "{} Battery".format(self.my_data["name"])
+
+    @property
+    def unique_id(self):
+        """Return the ID of this Hue sensor."""
+        return "BAT_{}".format(self.my_data["uniqueid"])
+
+    @property
+    def device_class(self):
+        """Return the device class of the sensor."""
+        return DEVICE_CLASS_BATTERY
+
+    @property
+    def unit_of_measurement(self):
+        """Return the unit_of_measurement of the device."""
+        return '%'
+
+    @property
+    def state(self):
+        """Return the state of the sensor."""
+        if self.my_data and self.my_data["changed"]:
+            return self.my_data["battery"]
+
+    @property
+    def device_info(self):
+        """Return the device info."""
+        pattern = re.compile(r'(?:[0-9a-fA-F]:?){16}')
+        macs  = re.findall(pattern,self.unique_id)
+        if len(macs) == 1:
+            identifier = macs[0]
+        return {
+            "name": self.name,
+            "identifiers": {(DOMAIN, identifier)},
             "manufacturer": self.my_data["manufacturername"],
             "model": self.my_data["productname"],
         }
