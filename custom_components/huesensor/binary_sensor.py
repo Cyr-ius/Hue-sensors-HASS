@@ -8,28 +8,21 @@ import logging
 import re
 
 from homeassistant.components.binary_sensor import BinarySensorDevice
-from homeassistant.components.hue import DOMAIN
+from homeassistant.components.hue import DOMAIN as HUE_DOMAIN
 from homeassistant.const import STATE_ON
-from homeassistant.core import callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, dispatcher_send
+from .hue_api_response import ENTITY_ATTRS
+from .const import DOMAIN, COORDINATOR, BINARIES_ICONS, BINARIES_DEVICE_CLASSES
 
 _LOGGER = logging.getLogger(__name__)
-
-ICONS = {"SML": "mdi:run-fast"}
-DEVICE_CLASSES = {"SML": "motion"}
-ATTRS = {
-    "SML": ["battery", "on", "sensitivity", "sensitivity_max"],
-}
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Defer binary sensor setup to the shared sensor module."""
-
+    coordinator = hass.data[DOMAIN][COORDINATOR]
     devices = []
-    for key, entity in hass.data["huesensor"]["data"].items():
+    for key, entity in coordinator.data.items():
         if entity["model"] == "SML":
-            entity_data = hass.data["huesensor"]["data"]
-            devices.append(HueBinarySensor(key, entity_data, hass))
+            devices.append(HueBinarySensor(key, coordinator))
     async_add_entities(devices, True)
 
 
@@ -38,13 +31,11 @@ class HueBinarySensor(BinarySensorDevice):
 
     ICON = "mdi:run-fast"
 
-    def __init__(self, hue_id, data, hass=None):
+    def __init__(self, hueid, coordinator):
         """Initialize the sensor object."""
-        self._hue_id = hue_id
-        self._data = data
-        self.my_data = self._data.get(self._hue_id)
-        self.hass = hass
-        self._unsubs = []
+        self.hueid = hueid
+        self.coordinator = coordinator  # data is in .data
+        self.data = self.coordinator.data[self.hueid]   
 
     @property
     def should_poll(self):
@@ -54,24 +45,22 @@ class HueBinarySensor(BinarySensorDevice):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return self.my_data["name"]
+        return self.data["name"]
 
     @property
     def unique_id(self):
         """Return the ID of this Hue sensor."""
-        return "{}_{}".format(self.my_data["model"],self.my_data["uniqueid"])
+        return "{}_{}".format(self.data["model"],self.data["uniqueid"])
 
     @property
     def is_on(self):
         """Return the state of the sensor."""
-        if self.my_data and self.my_data["model"] == "SML" and self.my_data["changed"]:
-            return self.my_data["state"] == STATE_ON
-        return False
+        return self.coordinator.data[self.hueid]["state"] == STATE_ON
 
     @property
     def icon(self):
         """Icon to use in the frontend, if any."""
-        icon = ICONS.get(self.my_data["model"])
+        icon = BINARIES_ICONS.get(self.data["model"])
         if icon:
             return icon
         return self.ICON
@@ -79,7 +68,7 @@ class HueBinarySensor(BinarySensorDevice):
     @property
     def device_class(self):
         """Return the class of this device, from component DEVICE_CLASSES."""
-        device_class = DEVICE_CLASSES.get(self.my_data["model"])
+        device_class = BINARIES_DEVICE_CLASSES.get(self.data["model"])
         if device_class:
             return device_class
 
@@ -87,7 +76,7 @@ class HueBinarySensor(BinarySensorDevice):
     def device_state_attributes(self):
         """Attributes."""
         return {
-            key: self.my_data.get(key) for key in ATTRS.get(self.my_data["model"], [])
+            key: self.data.get(key) for key in ENTITY_ATTRS.get(self.data["model"], [])
         }
 
     @property
@@ -99,24 +88,24 @@ class HueBinarySensor(BinarySensorDevice):
             identifier = macs[0]
         return {
             "name": self.name,
-            "identifiers": {(DOMAIN, identifier)},
-            "manufacturer": self.my_data["manufacturername"],
-            "model": self.my_data["productname"],
+            "identifiers": {(HUE_DOMAIN, identifier),(DOMAIN,identifier)},
+            "manufacturer": self.data["manufacturername"],
+            "model": self.data["productname"],
         }
 
+    @property
+    def available(self):
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
     async def async_added_to_hass(self):
-        """Connect dispatcher and send for register hue component."""
-        dispatcher_send(self.hass, "update-hue", self.unique_id)
-        self._unsubs = async_dispatcher_connect(
-            self.hass, "update-{}".format(self._hue_id), self.async_update_info
+        """When entity is added to hass."""
+        self.coordinator.async_add_listener(
+            self.async_write_ha_state
         )
 
-    async def async_will_remove_from_hass(self) -> None:
-        """Disconnect entity object when removed."""
-        self._unsubs()
-
-    @callback
-    def async_update_info(self, hue_id, data):
-        """Update entity."""
-        self.my_data = data.get(self._hue_id)
-        self.async_schedule_update_ha_state()
+    async def async_will_remove_from_hass(self):
+        """When entity will be removed from hass."""
+        self.coordinator.async_remove_listener(
+            self.async_write_ha_state
+        )

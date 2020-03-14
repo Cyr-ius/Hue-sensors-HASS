@@ -1,14 +1,11 @@
-"""
-Sensor for checking the status of Hue sensors.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/sensor.hue/
-"""
+"""Device tracking with the Hue app."""
 import asyncio
-from datetime import timedelta
 import logging
+from datetime import timedelta
 
+import homeassistant.util.dt as dt_util
 from homeassistant.components import zone
+
 from homeassistant.components.device_tracker.const import CONF_SCAN_INTERVAL
 from homeassistant.components.device_tracker.legacy import DeviceScanner
 from homeassistant.const import (
@@ -20,11 +17,8 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import slugify
-import homeassistant.util.dt as dt_util
 
-from . import HueSensorData
-
-DEPENDENCIES = ["hue"]
+from . import async_get_bridges
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,20 +87,12 @@ class HueDeviceScanner(DeviceScanner):
 
     async def async_update_info(self, now=None):
         """Get the bridge info."""
-        hsd = HueSensorData(self.hass, None)
-        bridges = hsd.get_bridges(self.hass)
-        if not bridges:
-            return
-        await asyncio.wait(
-            [hsd.update_api(bridge.api.sensors) for bridge in bridges],
-            loop=self.hass.loop,
-        )
-        sensors = [
-            self.async_see_sensor(sensor)
-            for bridge in bridges
-            for sensor in bridge.api.sensors.values()
-            if sensor.type == TYPE_GEOFENCE
-        ]
-        if not sensors:
-            return
-        await asyncio.wait(sensors)
+        for bridge in await async_get_bridges(self.hass):
+            await bridge.sensor_manager.coordinator.async_request_refresh()
+            tasks = [
+                self.async_see_sensor(sensor)
+                for sensor in bridge.api.sensors.values()
+                if sensor.type == TYPE_GEOFENCE
+            ]
+            if tasks:
+                await asyncio.wait(tasks)
