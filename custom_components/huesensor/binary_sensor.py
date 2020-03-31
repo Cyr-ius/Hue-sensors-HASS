@@ -76,7 +76,7 @@ class HueBinarySensor(BinarySensorDevice):
     def device_state_attributes(self):
         """Attributes."""
         return {
-            key: self.data.get(key) for key in ENTITY_ATTRS.get(self.data["model"], [])
+            key: self.coordinator.data[self.hueid].get(key) for key in ENTITY_ATTRS.get(self.data["model"], [])
         }
 
     @property
